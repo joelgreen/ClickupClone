@@ -1,3 +1,5 @@
+import "./globals.css";
+
 export const metadata = {
   title: "ClickUp Clone",
   description: "A project management application",
