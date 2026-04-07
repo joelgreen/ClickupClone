@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { logActivity } from "@/lib/logActivity";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -66,6 +67,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
         createdAt: true,
       },
     });
+
+    // Auto-log activity event
+    try {
+      await logActivity({
+        taskId: id,
+        projectId: task.projectId ?? undefined,
+        userId: comment.userId,
+        action: "comment.added",
+        metadata: { commentId: comment.id, body: body.body.substring(0, 100) },
+      });
+    } catch (logError) {
+      console.error("Failed to log activity for comment:", logError);
+    }
 
     return NextResponse.json(comment, { status: 201 });
   } catch (error) {
