@@ -29,11 +29,14 @@ model User {
   email     String    @unique
   name      String
   password  String
+  bio       String?
+  timezone  String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  tasks           Task[]       @relation("TaskAssignee")
-  comments        Comment[]
-  teamMemberships TeamMember[]
+  tasks              Task[]              @relation("TaskAssignee")
+  comments           Comment[]
+  teamMemberships    TeamMember[]
+  notificationPrefs  NotificationPrefs?
 }
 
 enum MemberRole {
@@ -113,4 +116,22 @@ model ActivityEvent {
   action    String
   metadata  Json?
   createdAt DateTime @default(now())
+}
+
+model WorkspaceSettings {
+  id          String   @id @default(cuid())
+  workspaceId String   @unique
+  data        Json
+  updatedAt   DateTime @updatedAt
+}
+
+model NotificationPrefs {
+  id            String  @id @default(cuid())
+  userId        String  @unique
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskAssigned  Boolean @default(true)
+  taskCommented Boolean @default(true)
+  taskCompleted Boolean @default(true)
+  mention       Boolean @default(true)
+  updatedAt     DateTime @updatedAt
 }
