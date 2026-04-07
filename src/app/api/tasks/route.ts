@@ -7,10 +7,27 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get("projectId");
     const assigneeId = searchParams.get("assigneeId");
+    const labelId = searchParams.get("labelId");
+    const overdue = searchParams.get("overdue");
+    const dueBefore = searchParams.get("dueBefore");
 
-    const where: Record<string, string> = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const where: any = {};
     if (projectId) where.projectId = projectId;
     if (assigneeId) where.assigneeId = assigneeId;
+
+    if (labelId) {
+      where.labels = {
+        some: { labelId },
+      };
+    }
+
+    if (overdue === "true") {
+      where.dueDate = { lt: new Date() };
+      where.status = { not: "done" };
+    } else if (dueBefore) {
+      where.dueDate = { lte: new Date(dueBefore) };
+    }
 
     const tasks = await prisma.task.findMany({
       where,
@@ -18,11 +35,21 @@ export async function GET(request: NextRequest) {
         assignee: true,
         project: true,
         subtasks: true,
+        labels: { include: { label: true } },
       },
       orderBy: [{ order: "asc" }, { createdAt: "desc" }],
     });
 
-    return NextResponse.json(tasks);
+    const tasksWithLabels = tasks.map((task) => ({
+      ...task,
+      labels: task.labels.map((tl) => ({
+        id: tl.label.id,
+        name: tl.label.name,
+        color: tl.label.color,
+      })),
+    }));
+
+    return NextResponse.json(tasksWithLabels);
   } catch (error) {
     console.error("Failed to fetch tasks:", error);
     return NextResponse.json(
@@ -59,6 +86,7 @@ export async function POST(request: NextRequest) {
         assignee: true,
         project: true,
         subtasks: true,
+        labels: { include: { label: true } },
       },
     });
 
@@ -75,7 +103,16 @@ export async function POST(request: NextRequest) {
       console.error("Failed to log activity for task creation:", logError);
     }
 
-    return NextResponse.json(task, { status: 201 });
+    const taskWithLabels = {
+      ...task,
+      labels: task.labels.map((tl) => ({
+        id: tl.label.id,
+        name: tl.label.name,
+        color: tl.label.color,
+      })),
+    };
+
+    return NextResponse.json(taskWithLabels, { status: 201 });
   } catch (error) {
     console.error("Failed to create task:", error);
     return NextResponse.json(

@@ -11,6 +11,12 @@ import {
   type DroppableProvided,
 } from "@hello-pangea/dnd";
 
+interface TaskLabel {
+  id: string;
+  name: string;
+  color: string;
+}
+
 interface Task {
   id: string;
   title: string;
@@ -19,6 +25,7 @@ interface Task {
   dueDate: string | null;
   description: string | null;
   project?: { id: string; name: string } | null;
+  labels?: TaskLabel[];
 }
 
 interface Comment {
@@ -102,6 +109,19 @@ function TaskCard({
       }`}
     >
       <h3 className="font-medium text-gray-900 text-sm">{task.title}</h3>
+      {task.labels && task.labels.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {task.labels.map((label) => (
+            <span
+              key={label.id}
+              className="inline-block px-2 py-0.5 rounded-full text-white text-[10px] font-medium"
+              style={{ backgroundColor: label.color }}
+            >
+              {label.name}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="mt-2 flex items-center gap-2 flex-wrap">
         <span
           className={`text-xs font-medium px-2 py-0.5 rounded-full ${PRIORITY_STYLES[task.priority] ?? PRIORITY_STYLES.low}`}
@@ -388,6 +408,9 @@ export default function BoardPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [allLabels, setAllLabels] = useState<TaskLabel[]>([]);
+  const [filterLabelId, setFilterLabelId] = useState<string>("");
+  const [showOverdueOnly, setShowOverdueOnly] = useState(false);
 
   // Guard against SSR for DnD
   useEffect(() => {
@@ -406,6 +429,18 @@ export default function BoardPage() {
     }
   }, []);
 
+  const fetchLabels = useCallback(async () => {
+    try {
+      const res = await fetch("/api/labels");
+      if (res.ok) {
+        const data = await res.json();
+        setAllLabels(data);
+      }
+    } catch {
+      // ignore - labels are optional
+    }
+  }, []);
+
   const fetchTasks = useCallback(async () => {
     try {
       const url = selectedProjectId
@@ -413,17 +448,35 @@ export default function BoardPage() {
         : "/api/tasks";
       const res = await fetch(url);
       if (res.ok) {
-        const data: Task[] = await res.json();
+        let data: Task[] = await res.json();
+
+        // Client-side filtering
+        if (filterLabelId) {
+          data = data.filter(
+            (t) => t.labels && t.labels.some((l) => l.id === filterLabelId)
+          );
+        }
+        if (showOverdueOnly) {
+          const now = new Date();
+          data = data.filter(
+            (t) =>
+              t.dueDate &&
+              new Date(t.dueDate) < now &&
+              t.status !== "done"
+          );
+        }
+
         setColumns(groupTasksByStatus(data));
       }
     } finally {
       setLoading(false);
     }
-  }, [selectedProjectId]);
+  }, [selectedProjectId, filterLabelId, showOverdueOnly]);
 
   useEffect(() => {
     fetchProjects();
-  }, [fetchProjects]);
+    fetchLabels();
+  }, [fetchProjects, fetchLabels]);
 
   useEffect(() => {
     fetchTasks();
@@ -544,6 +597,33 @@ export default function BoardPage() {
               </option>
             ))}
           </select>
+          <select
+            value={filterLabelId}
+            onChange={(e) => {
+              setFilterLabelId(e.target.value);
+              setLoading(true);
+            }}
+            className="text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          >
+            <option value="">All Labels</option>
+            {allLabels.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+          <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showOverdueOnly}
+              onChange={(e) => {
+                setShowOverdueOnly(e.target.checked);
+                setLoading(true);
+              }}
+              className="rounded border-gray-300"
+            />
+            Overdue only
+          </label>
           <a
             href="/search"
             className="text-sm text-blue-600 hover:text-blue-700 font-medium"
