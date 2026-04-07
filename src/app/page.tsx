@@ -1,46 +1,29 @@
-import NavUser from "@/components/NavUser";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { redirect } from "next/navigation";
+import Link from "next/link";
 
-export default function Home() {
+export default async function Home() {
+  const session = await getServerSession(authOptions);
+
+  if (session) {
+    redirect("/dashboard");
+  }
+
   return (
     <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-6">
-      <div className="absolute top-4 right-4">
-        <NavUser />
-      </div>
-      <h1 className="text-4xl font-bold text-gray-900">ClickUp Clone</h1>
-      <p className="text-gray-600">
-        A project management application built with Next.js, TypeScript, and PostgreSQL.
+      <h1 className="text-4xl font-bold text-gray-900">FlowOS</h1>
+      <p className="text-gray-600 text-center max-w-md">
+        A project management application built with Next.js, TypeScript, and
+        PostgreSQL.
       </p>
       <div className="flex gap-4">
-        <a
-          href="/board"
+        <Link
+          href="/auth/signin"
           className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
         >
-          Open Kanban Board →
-        </a>
-        <a
-          href="/projects"
-          className="inline-flex items-center gap-2 bg-white text-blue-600 border border-blue-600 px-6 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors"
-        >
-          View Projects →
-        </a>
-        <a
-          href="/activity"
-          className="inline-flex items-center gap-2 bg-white text-blue-600 border border-blue-600 px-6 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors"
-        >
-          Activity Feed →
-        </a>
-        <a
-          href="/search"
-          className="inline-flex items-center gap-2 bg-white text-blue-600 border border-blue-600 px-6 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors"
-        >
-          🔍 Search →
-        </a>
-        <a
-          href="/settings/team"
-          className="inline-flex items-center gap-2 bg-white text-blue-600 border border-blue-600 px-6 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors"
-        >
-          👥 Team →
-        </a>
+          Sign In →
+        </Link>
       </div>
     </main>
   );
