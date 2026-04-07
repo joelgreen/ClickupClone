@@ -1,6 +1,11 @@
+import NavUser from "@/components/NavUser";
+
 export default function Home() {
   return (
     <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-6">
+      <div className="absolute top-4 right-4">
+        <NavUser />
+      </div>
       <h1 className="text-4xl font-bold text-gray-900">ClickUp Clone</h1>
       <p className="text-gray-600">
         A project management application built with Next.js, TypeScript, and PostgreSQL.
