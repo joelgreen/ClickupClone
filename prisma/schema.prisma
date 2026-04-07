@@ -31,8 +31,36 @@ model User {
   password  String
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  tasks     Task[]    @relation("TaskAssignee")
-  comments  Comment[]
+  tasks           Task[]       @relation("TaskAssignee")
+  comments        Comment[]
+  teamMemberships TeamMember[]
+}
+
+enum MemberRole {
+  owner
+  admin
+  member
+}
+
+model TeamMember {
+  id        String     @id @default(uuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      MemberRole @default(member)
+  invitedBy String?
+  joinedAt  DateTime   @default(now())
+  createdAt DateTime   @default(now())
+}
+
+model Invitation {
+  id         String     @id @default(uuid())
+  email      String
+  role       MemberRole @default(member)
+  token      String     @unique @default(uuid())
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  invitedBy  String
+  createdAt  DateTime   @default(now())
 }
 
 model Project {
