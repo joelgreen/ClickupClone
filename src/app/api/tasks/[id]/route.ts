@@ -17,6 +17,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         project: true,
         subtasks: true,
         parent: true,
+        labels: { include: { label: true } },
       },
     });
 
@@ -24,7 +25,16 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
 
-    return NextResponse.json(task);
+    const taskWithLabels = {
+      ...task,
+      labels: task.labels.map((tl) => ({
+        id: tl.label.id,
+        name: tl.label.name,
+        color: tl.label.color,
+      })),
+    };
+
+    return NextResponse.json(taskWithLabels);
   } catch (error) {
     console.error("Failed to fetch task:", error);
     return NextResponse.json(
@@ -56,6 +66,19 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       data.dueDate = body.dueDate ? new Date(body.dueDate) : null;
     if (body.order !== undefined) data.order = body.order;
 
+    // Sync labels if labelIds provided
+    if (Array.isArray(body.labelIds)) {
+      await prisma.taskLabel.deleteMany({ where: { taskId: id } });
+      if (body.labelIds.length > 0) {
+        await prisma.taskLabel.createMany({
+          data: body.labelIds.map((labelId: string) => ({
+            taskId: id,
+            labelId,
+          })),
+        });
+      }
+    }
+
     const task = await prisma.task.update({
       where: { id },
       data,
@@ -63,6 +86,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         assignee: true,
         project: true,
         subtasks: true,
+        labels: { include: { label: true } },
       },
     });
 
@@ -103,7 +127,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       console.error("Failed to log activity for task PATCH:", logError);
     }
 
-    return NextResponse.json(task);
+    const taskWithLabels = {
+      ...task,
+      labels: task.labels.map((tl) => ({
+        id: tl.label.id,
+        name: tl.label.name,
+        color: tl.label.color,
+      })),
+    };
+
+    return NextResponse.json(taskWithLabels);
   } catch (error) {
     console.error("Failed to update task:", error);
     return NextResponse.json(

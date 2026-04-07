@@ -95,6 +95,26 @@ model Task {
   subtasks  Task[]   @relation("TaskSubtasks")
   comments  Comment[]
   activity  ActivityEvent[]
+  labels    TaskLabel[]
+}
+
+model Label {
+  id          String      @id @default(cuid())
+  name        String
+  color       String
+  workspaceId String
+  createdAt   DateTime    @default(now())
+  tasks       TaskLabel[]
+}
+
+model TaskLabel {
+  taskId  String
+  labelId String
+  task    Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label   Label  @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, labelId])
+  @@id([taskId, labelId])
 }
 
 model Comment {
