@@ -9,6 +9,14 @@ interface Task {
   priority: string;
   dueDate: string | null;
   description: string | null;
+  project?: { id: string; name: string } | null;
+}
+
+interface Comment {
+  id: string;
+  userId: string;
+  body: string;
+  createdAt: string;
 }
 
 interface Project {
@@ -30,6 +38,13 @@ const PRIORITY_STYLES: Record<string, string> = {
   low: "bg-gray-100 text-gray-600",
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  todo: "Todo",
+  in_progress: "In Progress",
+  done: "Done",
+  cancelled: "Cancelled",
+};
+
 function formatDueDate(dateStr: string | null): string | null {
   if (!dateStr) return null;
   const date = new Date(dateStr);
@@ -39,12 +54,31 @@ function formatDueDate(dateStr: string | null): string | null {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function TaskCard({ task }: { task: Task }) {
+function formatCommentDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function TaskCard({
+  task,
+  onClick,
+}: {
+  task: Task;
+  onClick: () => void;
+}) {
   const dueDateLabel = formatDueDate(task.dueDate);
   const isOverdue = dueDateLabel === "Overdue";
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
+    <div
+      onClick={onClick}
+      className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+    >
       <h3 className="font-medium text-gray-900 text-sm">{task.title}</h3>
       <div className="mt-2 flex items-center gap-2 flex-wrap">
         <span
@@ -61,6 +95,184 @@ function TaskCard({ task }: { task: Task }) {
         )}
       </div>
     </div>
+  );
+}
+
+function CommentsSection({ taskId }: { taskId: string }) {
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newComment, setNewComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const fetchComments = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/comments`);
+      if (res.ok) {
+        const data = await res.json();
+        setComments(data);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [taskId]);
+
+  useEffect(() => {
+    fetchComments();
+  }, [fetchComments]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newComment.trim()) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: "anonymous", body: newComment.trim() }),
+      });
+      if (res.ok) {
+        setNewComment("");
+        fetchComments();
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="mt-6 border-t border-gray-200 pt-4">
+      <h3 className="text-sm font-semibold text-gray-700 mb-3">Comments</h3>
+      {loading ? (
+        <p className="text-xs text-gray-400">Loading comments…</p>
+      ) : comments.length === 0 ? (
+        <p className="text-xs text-gray-400">No comments yet.</p>
+      ) : (
+        <div className="space-y-3 max-h-64 overflow-y-auto mb-4">
+          {comments.map((comment) => (
+            <div
+              key={comment.id}
+              className="bg-gray-50 rounded-lg p-3 text-sm"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-medium text-gray-700 text-xs">
+                  {comment.userId}
+                </span>
+                <span className="text-xs text-gray-400">
+                  {formatCommentDate(comment.createdAt)}
+                </span>
+              </div>
+              <p className="text-gray-600 text-sm">{comment.body}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      <form onSubmit={handleSubmit} className="flex gap-2 mt-3">
+        <input
+          type="text"
+          value={newComment}
+          onChange={(e) => setNewComment(e.target.value)}
+          placeholder="Add a comment…"
+          className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
+        />
+        <button
+          type="submit"
+          disabled={submitting || !newComment.trim()}
+          className="text-sm bg-blue-600 text-white px-4 py-1.5 rounded-md hover:bg-blue-700 disabled:opacity-50"
+        >
+          {submitting ? "Sending…" : "Add Comment"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function TaskDetailPanel({
+  task,
+  onClose,
+}: {
+  task: Task;
+  onClose: () => void;
+}) {
+  const dueDateLabel = formatDueDate(task.dueDate);
+  const isOverdue = dueDateLabel === "Overdue";
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/30 z-40"
+        onClick={onClose}
+      />
+      {/* Side Panel */}
+      <div className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-xl z-50 flex flex-col animate-slide-in">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-bold text-gray-900 truncate">
+            {task.title}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {/* Description */}
+          {task.description ? (
+            <p className="text-sm text-gray-600 mb-4">{task.description}</p>
+          ) : (
+            <p className="text-sm text-gray-400 italic mb-4">
+              No description provided.
+            </p>
+          )}
+
+          {/* Meta info */}
+          <div className="space-y-3 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 w-16">Priority</span>
+              <span
+                className={`text-xs font-medium px-2 py-0.5 rounded-full ${PRIORITY_STYLES[task.priority] ?? PRIORITY_STYLES.low}`}
+              >
+                {task.priority}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 w-16">Status</span>
+              <span className="text-xs font-medium text-gray-700">
+                {STATUS_LABELS[task.status] ?? task.status}
+              </span>
+            </div>
+            {task.dueDate && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 w-16">Due</span>
+                <span
+                  className={`text-xs ${isOverdue ? "text-red-600 font-semibold" : "text-gray-700"}`}
+                >
+                  {isOverdue
+                    ? "⚠ Overdue"
+                    : new Date(task.dueDate).toLocaleDateString("en-US", {
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                </span>
+              </div>
+            )}
+            {task.project && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 w-16">Project</span>
+                <span className="text-xs font-medium text-blue-600">
+                  {task.project.name}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Comments */}
+          <CommentsSection taskId={task.id} />
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -138,6 +350,7 @@ export default function BoardPage() {
   const [openForm, setOpenForm] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -178,8 +391,25 @@ export default function BoardPage() {
     return tasks.filter((t) => t.status === status);
   }
 
+  function handleTaskClick(task: Task) {
+    // Fetch full task details including project relation
+    fetch(`/api/tasks/${task.id}`)
+      .then((res) => res.json())
+      .then((fullTask) => setSelectedTask(fullTask))
+      .catch(() => setSelectedTask(task));
+  }
+
   return (
     <main className="min-h-screen bg-gray-50">
+      <style>{`
+        @keyframes slideIn {
+          from { transform: translateX(100%); }
+          to { transform: translateX(0); }
+        }
+        .animate-slide-in {
+          animation: slideIn 0.2s ease-out;
+        }
+      `}</style>
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <a href="/" className="text-gray-500 hover:text-gray-700 text-sm">
@@ -232,7 +462,11 @@ export default function BoardPage() {
 
               <div className="space-y-3">
                 {tasksByStatus(col.key).map((task) => (
-                  <TaskCard key={task.id} task={task} />
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onClick={() => handleTaskClick(task)}
+                  />
                 ))}
 
                 {openForm === col.key ? (
@@ -256,6 +490,14 @@ export default function BoardPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Task Detail Side Panel */}
+      {selectedTask && (
+        <TaskDetailPanel
+          task={selectedTask}
+          onClose={() => setSelectedTask(null)}
+        />
       )}
     </main>
   );
