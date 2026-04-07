@@ -11,6 +11,11 @@ interface Task {
   description: string | null;
 }
 
+interface Project {
+  id: string;
+  name: string;
+}
+
 const COLUMNS = [
   { key: "todo", label: "Todo" },
   { key: "in_progress", label: "In Progress" },
@@ -131,10 +136,27 @@ export default function BoardPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [openForm, setOpenForm] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+
+  const fetchProjects = useCallback(async () => {
+    try {
+      const res = await fetch("/api/projects");
+      if (res.ok) {
+        const data = await res.json();
+        setProjects(data);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch("/api/tasks");
+      const url = selectedProjectId
+        ? `/api/tasks?projectId=${selectedProjectId}`
+        : "/api/tasks";
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setTasks(data);
@@ -142,7 +164,11 @@ export default function BoardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
 
   useEffect(() => {
     fetchTasks();
@@ -160,6 +186,29 @@ export default function BoardPage() {
             ← Home
           </a>
           <h1 className="text-xl font-bold text-gray-900">Kanban Board</h1>
+        </div>
+        <div className="flex items-center gap-4">
+          <select
+            value={selectedProjectId}
+            onChange={(e) => {
+              setSelectedProjectId(e.target.value);
+              setLoading(true);
+            }}
+            className="text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          >
+            <option value="">All Projects</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <a
+            href="/projects"
+            className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+          >
+            Projects
+          </a>
         </div>
       </header>
 
