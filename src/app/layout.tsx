@@ -1,4 +1,5 @@
 import "./globals.css";
+import SessionProviderWrapper from "@/components/SessionProviderWrapper";
 
 export const metadata = {
   title: "ClickUp Clone",
@@ -12,7 +13,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <SessionProviderWrapper>{children}</SessionProviderWrapper>
+      </body>
     </html>
   );
 }
