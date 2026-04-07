@@ -1,6 +1,15 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import {
+  DragDropContext,
+  Droppable,
+  Draggable,
+  type DropResult,
+  type DraggableProvided,
+  type DraggableStateSnapshot,
+  type DroppableProvided,
+} from "@hello-pangea/dnd";
 
 interface Task {
   id: string;
@@ -23,6 +32,8 @@ interface Project {
   id: string;
   name: string;
 }
+
+type ColumnMap = Record<string, Task[]>;
 
 const COLUMNS = [
   { key: "todo", label: "Todo" },
@@ -67,17 +78,28 @@ function formatCommentDate(dateStr: string): string {
 function TaskCard({
   task,
   onClick,
+  provided,
+  snapshot,
 }: {
   task: Task;
   onClick: () => void;
+  provided: DraggableProvided;
+  snapshot: DraggableStateSnapshot;
 }) {
   const dueDateLabel = formatDueDate(task.dueDate);
   const isOverdue = dueDateLabel === "Overdue";
 
   return (
     <div
+      ref={provided.innerRef}
+      {...provided.draggableProps}
+      {...provided.dragHandleProps}
       onClick={onClick}
-      className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+      className={`bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer ${
+        snapshot.isDragging
+          ? "rotate-1 shadow-2xl opacity-90 ring-2 ring-blue-400"
+          : ""
+      }`}
     >
       <h3 className="font-medium text-gray-900 text-sm">{task.title}</h3>
       <div className="mt-2 flex items-center gap-2 flex-wrap">
@@ -344,13 +366,33 @@ const COLUMN_COLORS: Record<string, string> = {
   cancelled: "bg-gray-400",
 };
 
+/** Group a flat task array into a column map keyed by status */
+function groupTasksByStatus(tasks: Task[]): ColumnMap {
+  const map: ColumnMap = {};
+  for (const col of COLUMNS) {
+    map[col.key] = [];
+  }
+  for (const task of tasks) {
+    if (map[task.status]) {
+      map[task.status].push(task);
+    }
+  }
+  return map;
+}
+
 export default function BoardPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [columns, setColumns] = useState<ColumnMap>(() => groupTasksByStatus([]));
   const [loading, setLoading] = useState(true);
   const [openForm, setOpenForm] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  // Guard against SSR for DnD
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -371,8 +413,8 @@ export default function BoardPage() {
         : "/api/tasks";
       const res = await fetch(url);
       if (res.ok) {
-        const data = await res.json();
-        setTasks(data);
+        const data: Task[] = await res.json();
+        setColumns(groupTasksByStatus(data));
       }
     } finally {
       setLoading(false);
@@ -387,8 +429,72 @@ export default function BoardPage() {
     fetchTasks();
   }, [fetchTasks]);
 
-  function tasksByStatus(status: string) {
-    return tasks.filter((t) => t.status === status);
+  function handleDragEnd(result: DropResult) {
+    const { source, destination, draggableId } = result;
+
+    // Dropped outside a droppable or in the same position
+    if (!destination) return;
+    if (
+      source.droppableId === destination.droppableId &&
+      source.index === destination.index
+    ) {
+      return;
+    }
+
+    const taskId = draggableId;
+    const sourceStatus = source.droppableId;
+    const destStatus = destination.droppableId;
+
+    // Save previous state for rollback
+    const prevColumns = { ...columns };
+    for (const key of Object.keys(prevColumns)) {
+      prevColumns[key] = [...prevColumns[key]];
+    }
+
+    // Optimistic update
+    setColumns((prev) => {
+      const next = { ...prev };
+      // Deep copy affected columns
+      const sourceCol = [...(next[sourceStatus] || [])];
+      const destCol =
+        sourceStatus === destStatus
+          ? sourceCol
+          : [...(next[destStatus] || [])];
+
+      // Remove from source
+      const [movedTask] = sourceCol.splice(source.index, 1);
+      if (!movedTask) return prev;
+
+      // Update status on the task object
+      const updatedTask = { ...movedTask, status: destStatus };
+
+      // Insert into destination
+      destCol.splice(destination.index, 0, updatedTask);
+
+      next[sourceStatus] = sourceCol;
+      if (sourceStatus !== destStatus) {
+        next[destStatus] = destCol;
+      }
+
+      return next;
+    });
+
+    // Persist to API in the background
+    fetch(`/api/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: destStatus }),
+    })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`PATCH failed with status ${res.status}`);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to update task status, reverting:", err);
+        // Revert to previous state
+        setColumns(prevColumns);
+      });
   }
 
   function handleTaskClick(task: Task) {
@@ -397,6 +503,11 @@ export default function BoardPage() {
       .then((res) => res.json())
       .then((fullTask) => setSelectedTask(fullTask))
       .catch(() => setSelectedTask(task));
+  }
+
+  function handleTaskCreated() {
+    setOpenForm(null);
+    fetchTasks();
   }
 
   return (
@@ -446,6 +557,72 @@ export default function BoardPage() {
         <div className="flex items-center justify-center h-64 text-gray-400">
           Loading tasks…
         </div>
+      ) : mounted ? (
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-start">
+            {COLUMNS.map((col) => (
+              <div key={col.key} className="bg-gray-100 rounded-xl p-4 min-h-[200px]">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className={`w-3 h-3 rounded-full ${COLUMN_COLORS[col.key]}`} />
+                  <h2 className="font-semibold text-gray-700 text-sm uppercase tracking-wide">
+                    {col.label}
+                  </h2>
+                  <span className="ml-auto text-xs text-gray-400 font-medium">
+                    {(columns[col.key] || []).length}
+                  </span>
+                </div>
+
+                <Droppable droppableId={col.key}>
+                  {(provided: DroppableProvided) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      className="space-y-3 min-h-[40px]"
+                    >
+                      {(columns[col.key] || []).map((task, index) => (
+                        <Draggable
+                          key={task.id}
+                          draggableId={task.id}
+                          index={index}
+                        >
+                          {(
+                            dragProvided: DraggableProvided,
+                            dragSnapshot: DraggableStateSnapshot
+                          ) => (
+                            <TaskCard
+                              task={task}
+                              onClick={() => handleTaskClick(task)}
+                              provided={dragProvided}
+                              snapshot={dragSnapshot}
+                            />
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
+                    </div>
+                  )}
+                </Droppable>
+
+                <div className="mt-3">
+                  {openForm === col.key ? (
+                    <InlineTaskForm
+                      status={col.key}
+                      onCreated={handleTaskCreated}
+                      onCancel={() => setOpenForm(null)}
+                    />
+                  ) : (
+                    <button
+                      onClick={() => setOpenForm(col.key)}
+                      className="w-full text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg py-2 transition-colors"
+                    >
+                      + New Task
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </DragDropContext>
       ) : (
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-start">
           {COLUMNS.map((col) => (
@@ -455,37 +632,6 @@ export default function BoardPage() {
                 <h2 className="font-semibold text-gray-700 text-sm uppercase tracking-wide">
                   {col.label}
                 </h2>
-                <span className="ml-auto text-xs text-gray-400 font-medium">
-                  {tasksByStatus(col.key).length}
-                </span>
-              </div>
-
-              <div className="space-y-3">
-                {tasksByStatus(col.key).map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    onClick={() => handleTaskClick(task)}
-                  />
-                ))}
-
-                {openForm === col.key ? (
-                  <InlineTaskForm
-                    status={col.key}
-                    onCreated={() => {
-                      setOpenForm(null);
-                      fetchTasks();
-                    }}
-                    onCancel={() => setOpenForm(null)}
-                  />
-                ) : (
-                  <button
-                    onClick={() => setOpenForm(col.key)}
-                    className="w-full text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg py-2 transition-colors"
-                  >
-                    + New Task
-                  </button>
-                )}
               </div>
             </div>
           ))}
