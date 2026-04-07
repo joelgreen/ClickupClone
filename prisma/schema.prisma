@@ -63,6 +63,7 @@ model Task {
   parent    Task?    @relation("TaskSubtasks", fields: [parentTaskId], references: [id])
   subtasks  Task[]   @relation("TaskSubtasks")
   comments  Comment[]
+  activity  ActivityEvent[]
 }
 
 model Comment {
@@ -72,5 +73,16 @@ model Comment {
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   body      String
+  createdAt DateTime @default(now())
+}
+
+model ActivityEvent {
+  id        String   @id @default(uuid())
+  taskId    String?
+  task      Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  projectId String?
+  userId    String
+  action    String
+  metadata  Json?
   createdAt DateTime @default(now())
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { logActivity } from "@/lib/logActivity";
 
 export async function GET(request: NextRequest) {
   try {
@@ -60,6 +61,19 @@ export async function POST(request: NextRequest) {
         subtasks: true,
       },
     });
+
+    // Auto-log activity event
+    try {
+      await logActivity({
+        taskId: task.id,
+        projectId: task.projectId ?? undefined,
+        userId: body.userId || "system",
+        action: "task.created",
+        metadata: { title: task.title, status: task.status, projectId: task.projectId },
+      });
+    } catch (logError) {
+      console.error("Failed to log activity for task creation:", logError);
+    }
 
     return NextResponse.json(task, { status: 201 });
   } catch (error) {
